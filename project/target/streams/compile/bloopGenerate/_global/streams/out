@@ -1,0 +1,4 @@
+[0m[[0m[0mdebug[0m] [0m[0m[kafka-practice-build] Classpath dependencies List()[0m
+[0m[[0m[0mdebug[0m] [0m[0m[kafka-practice-build] Dependencies from configurations List()[0m
+[0m[[0m[0mdebug[0m] [0m[0mBloop wrote the configuration of project 'kafka-practice-build' to '/Users/cw-tsushi/dev/workspaces/practice/kafka-practice/project/.bloop/kafka-practice-build.json'[0m
+[0m[[0m[32msuccess[0m] [0m[0mGenerated .bloop/kafka-practice-build.json[0m
