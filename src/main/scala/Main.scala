@@ -1,24 +1,18 @@
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scala.concurrent.duration._
-import scala.io.StdIn
 import scala.util.{Failure, Success}
-
-import akka.{Done, NotUsed}
+import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
 import akka.kafka.{
   CommitterSettings,
   ConsumerSettings,
-  ProducerMessage,
   ProducerSettings,
   Subscriptions
 }
-import akka.kafka.scaladsl.{Consumer, Producer}
-import akka.kafka.scaladsl.Consumer.DrainingControl
-import akka.stream.{ActorMaterializer, KillSwitches}
+import akka.kafka.scaladsl.{Committer, Consumer, Producer}
+import akka.stream.KillSwitches
 import akka.stream.scaladsl.Keep
-import akka.stream.scaladsl.{Sink, Source}
 import com.typesafe.config.ConfigFactory
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.producer.ProducerRecord
@@ -66,16 +60,21 @@ object Main extends App with MessageJsonProtocol {
       } catch {
         case _: Throwable =>
           println("invalid text.")
-          (consumed, Message("",""))
+          (consumed, Message("", ""))
       }
     }
-    .map {case (consumed, msg) =>
-      val producing = new ProducerRecord[String, String](copyTopic, s"copy message - title:${msg.title}, text:${msg.text}")
-      (consumed, producing)
+    .map {
+      case (consumed, msg) =>
+        val producing = new ProducerRecord[String, String](
+          copyTopic,
+          s"copy message - title:${msg.title}, text:${msg.text}"
+        )
+        (consumed, producing)
     }
-    .mapAsync(1) {case (consumed, producing) =>
-      consumed.committableOffset.commitScaladsl()
-      Future.apply(producing)
+    .mapAsync(1) {
+      case (consumed, producing) =>
+        Committer.sink(committerSettings)
+        Future.apply(producing)
     }
     .runWith(Producer.plainSink(producerSettings))
 
