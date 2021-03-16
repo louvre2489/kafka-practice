@@ -48,33 +48,32 @@ object Main extends App with MessageJsonProtocol {
 
   val committerSettings = CommitterSettings(system)
 
+  val createProducerRecord: Message => ProducerRecord[String, String] = msg =>
+    new ProducerRecord[String, String](
+      copyTopic,
+      s"copy message - title:${msg.title}, text:${msg.text}"
+  )
+
   val done: Future[Done] = Consumer
     .committableSource(consumerSettings, Subscriptions.topics(topic))
     .viaMat(KillSwitches.single)(Keep.right)
     .map { consumed =>
       println("Consuming!!!")
-      try {
-        val msg = consumed.record.value().parseJson.convertTo[Message]
-        println(s"success. title: ${msg.title}, text: ${msg.text}")
-        (consumed, msg)
-      } catch {
-        case _: Throwable =>
-          println("invalid text.")
-          (consumed, Message("", ""))
-      }
+
+      val msg = consumed.record.value().parseJson.convertTo[Message]
+      consumed.committableOffset.commitScaladsl()
+
+      msg
     }
-    .map {
-      case (consumed, msg) =>
-        val producing = new ProducerRecord[String, String](
-          copyTopic,
-          s"copy message - title:${msg.title}, text:${msg.text}"
-        )
-        (consumed, producing)
+    .recover {
+      case _: Throwable =>
+        Message(title = "Error", text = "Invalid Message")
     }
-    .mapAsync(1) {
-      case (consumed, producing) =>
-        Committer.sink(committerSettings)
-        Future.apply(producing)
+    .map { msg =>
+      createProducerRecord(msg)
+    }
+    .mapAsync(1) { producing =>
+      Future.apply(producing)
     }
     .runWith(Producer.plainSink(producerSettings))
 
