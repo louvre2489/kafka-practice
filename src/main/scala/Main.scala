@@ -1,4 +1,5 @@
 import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.StdIn
 import scala.util.{Failure, Success}
@@ -53,7 +54,7 @@ object Main extends App with MessageJsonProtocol {
 
   val committerSettings = CommitterSettings(system)
 
-  val (cKillSwitch, cDone) = Consumer
+  val done: Future[Done] = Consumer
     .committableSource(consumerSettings, Subscriptions.topics(topic))
     .viaMat(KillSwitches.single)(Keep.right)
     .map { consumed =>
@@ -61,42 +62,28 @@ object Main extends App with MessageJsonProtocol {
       try {
         val msg = consumed.record.value().parseJson.convertTo[Message]
         println(s"success. title: ${msg.title}, text: ${msg.text}")
-
-        val done =
-          Source
-          .single(msg)
-          .map {_ =>
-              new ProducerRecord[String, String](copyTopic, s"copy message - title:${msg.title}, text:${msg.text}")
-          }
-          .runWith(Producer.plainSink(producerSettings))
-
-        done.onComplete {
-          case Success(_) =>
-            println("Finish Send Message!")
-          case Failure(ex) =>
-            println(s"Fail Send. Reason: ${ex.getMessage}")
-        }
+        (consumed, msg)
       } catch {
         case _: Throwable =>
           println("invalid text.")
+          (consumed, Message("",""))
       }
-      consumed
     }
-    .mapAsync(1) { msg =>
-      msg.committableOffset.commitScaladsl()
+    .map {case (consumed, msg) =>
+      val producing = new ProducerRecord[String, String](copyTopic, s"copy message - title:${msg.title}, text:${msg.text}")
+      (consumed, producing)
     }
-    .toMat(Sink.ignore)(Keep.both)
-    .run()
+    .mapAsync(1) {case (consumed, producing) =>
+      consumed.committableOffset.commitScaladsl()
+      Future.apply(producing)
+    }
+    .runWith(Producer.plainSink(producerSettings))
 
-  cDone.onComplete {
+  done.onComplete {
     case Success(_) =>
-      println("done consumer.")
+      println("done.")
     case Failure(ex) =>
-      println(s"fail consume. reason: ${ex.getMessage}")
-  }
-
-  sys.addShutdownHook {
-    cKillSwitch.shutdown()
+      println(s"fail. reason: ${ex.getMessage}")
   }
 
   println("start")
