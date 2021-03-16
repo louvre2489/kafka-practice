@@ -77,7 +77,7 @@ object Main extends App with MessageJsonProtocol {
             println(s"Fail Send. Reason: ${ex.getMessage}")
         }
       } catch {
-        case _ =>
+        case _: Throwable =>
           println("invalid text.")
       }
       consumed
